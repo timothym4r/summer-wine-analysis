@@ -11,6 +11,7 @@ TEST_SIZE = 0.2
 VALID_SIZE = 0.1
 MIN_CLASS_COUNT = 50
 N_CLASSIFICATION_BINS = 4
+DEFAULT_MAX_NGRAM = 2
 
 DEFAULT_DATA_PATH = "data/WineEnthusiast-data/winemag-data-130k-v2.csv"
 DEFAULT_OUTPUT_DIR = "outputs"
@@ -24,7 +25,7 @@ EMBEDDING_CACHE_DIR = "outputs/advanced_embeddings/cache"
 
 TFIDF_CONFIG = {
     "max_features": 50000,
-    "ngram_range": (1, 2),
+    "ngram_range": (1, DEFAULT_MAX_NGRAM),
     "min_df": 2,
     "max_df": 0.95,
     "sublinear_tf": True,
@@ -32,7 +33,7 @@ TFIDF_CONFIG = {
 
 COUNT_VECTORIZER_CONFIG = {
     "max_features": 50000,
-    "ngram_range": (1, 2),
+    "ngram_range": (1, DEFAULT_MAX_NGRAM),
     "min_df": 2,
     "max_df": 0.95,
 }

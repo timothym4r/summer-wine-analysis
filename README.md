@@ -91,13 +91,13 @@ Configured in `TFIDF_CONFIG`:
 
 ```python
 max_features = 50000
-ngram_range = (1, 2)
+ngram_range = (1, DEFAULT_MAX_NGRAM)
 min_df = 2
 max_df = 0.95
 sublinear_tf = True
 ```
 
-This produces unigram and bigram TF-IDF features.
+By default, `DEFAULT_MAX_NGRAM = 2`, so this produces unigram and bigram TF-IDF features. Use `--max-ngram N` to run with `(1, N)` instead.
 
 ### Count
 
@@ -105,19 +105,19 @@ Configured in `COUNT_VECTORIZER_CONFIG`:
 
 ```python
 max_features = 50000
-ngram_range = (1, 2)
+ngram_range = (1, DEFAULT_MAX_NGRAM)
 min_df = 2
 max_df = 0.95
 ```
 
-This produces unigram and bigram raw count features.
+By default, this produces unigram and bigram raw count features. Use `--max-ngram N` to run with `(1, N)` instead.
 
 ### Indicator N-Grams
 
 Added as binary presence/absence versions of the count features. These use the same default n-gram range as count features:
 
 ```python
-ngram_range = (1, 2)
+ngram_range = (1, DEFAULT_MAX_NGRAM)
 binary = True
 ```
 
@@ -220,10 +220,13 @@ Useful options:
 
 ```bash
 python3 run_experiments.py --data path/to/data.csv --output-dir outputs
+python3 run_experiments.py --max-ngram 3
 python3 run_experiments.py --skip-interpretability
 python3 run_experiments.py --standardize-target
 python3 run_experiments.py --remove-prepositions-conjunctions
 ```
+
+`--max-ngram N` applies to all n-gram feature methods: TF-IDF, count, and indicator. The default is `2`.
 
 `--standardize-target` applies only to regression. It trains regression models on z-scored `points`, then inverse-transforms predictions before computing MAE, RMSE, and R2 so reported metrics remain in the original points scale.
 
@@ -343,7 +346,7 @@ quadratic weighted kappa = 0.4902
 features = 18114
 ```
 
-The current code now uses the broader `indicator` family with 1-grams and 2-grams plus multiple linear/tree models. Preposition/conjunction filtering is opt-in through `--remove-prepositions-conjunctions`. To refresh the main result CSVs, rerun:
+The current code now uses the broader `indicator` family with configurable n-grams plus multiple linear/tree models. Preposition/conjunction filtering is opt-in through `--remove-prepositions-conjunctions`. To refresh the main result CSVs, rerun:
 
 ```bash
 python3 run_experiments.py
@@ -371,8 +374,9 @@ Start with these files:
 
 Important implementation details:
 
-- Current TF-IDF and count features use 1-grams and 2-grams.
-- Indicator features also use 1-grams and 2-grams, but are binary presence/absence features.
+- Current TF-IDF, count, and indicator features use configurable `(1, N)` n-gram ranges.
+- The default `N` is `2`; set it with `--max-ngram`.
+- Indicator features are binary presence/absence features.
 - Preposition/conjunction filtering is opt-in and applies to all n-gram feature families together.
 - Negation words such as `not` should not be casually removed if stopword filtering is changed later.
 - `--standardize-target` changes regression training targets only; evaluation is still reported on the original point scale.

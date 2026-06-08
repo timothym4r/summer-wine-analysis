@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from .binning import make_rating_bins
-from .config import CLASS_COL, RANDOM_SEED, TARGET_COL, TEXT_COL
+from .config import CLASS_COL, DEFAULT_MAX_NGRAM, RANDOM_SEED, TARGET_COL, TEXT_COL
 from .data import train_valid_test_split
 from .evaluation import evaluate_classification, evaluate_regression
 from .features import (
@@ -59,10 +59,21 @@ def _target_transformer(
     }
 
 
-def _ngram_kwargs(remove_prepositions_conjunctions: bool) -> dict[str, Any]:
+def _ngram_kwargs(
+    remove_prepositions_conjunctions: bool,
+    max_ngram: int = DEFAULT_MAX_NGRAM,
+) -> dict[str, Any]:
+    if max_ngram < 1:
+        raise ValueError("max_ngram must be at least 1.")
+
+    kwargs: dict[str, Any] = {"ngram_range": (1, max_ngram)}
     if not remove_prepositions_conjunctions:
-        return {}
-    return {"stop_words": NGRAM_STOP_WORDS}
+        return kwargs
+
+    return {
+        **kwargs,
+        "stop_words": NGRAM_STOP_WORDS,
+    }
 
 
 def run_regression_experiments(
@@ -75,6 +86,7 @@ def run_regression_experiments(
     run_few_shot_llm: bool = False,
     standardize_target: bool = False,
     remove_prepositions_conjunctions: bool = False,
+    max_ngram: int = DEFAULT_MAX_NGRAM,
 ) -> pd.DataFrame:
     """Run classical regression baselines and optional extension points."""
     train, valid, test = train_valid_test_split(
@@ -88,7 +100,7 @@ def run_regression_experiments(
         train_eval[target_col],
         standardize_target,
     )
-    ngram_kwargs = _ngram_kwargs(remove_prepositions_conjunctions)
+    ngram_kwargs = _ngram_kwargs(remove_prepositions_conjunctions, max_ngram=max_ngram)
 
     rows: list[dict[str, Any]] = []
     models = get_regression_models()
@@ -210,6 +222,7 @@ def run_classification_experiments(
     run_llm_features: bool = False,
     run_few_shot_llm: bool = False,
     remove_prepositions_conjunctions: bool = False,
+    max_ngram: int = DEFAULT_MAX_NGRAM,
 ) -> pd.DataFrame:
     """Run classical classification baselines and optional extension points."""
     if CLASS_COL not in df.columns:
@@ -223,7 +236,7 @@ def run_classification_experiments(
     )
     train_eval = pd.concat([train, valid], ignore_index=True)
     labels = list(df[CLASS_COL].cat.categories) if hasattr(df[CLASS_COL], "cat") else None
-    ngram_kwargs = _ngram_kwargs(remove_prepositions_conjunctions)
+    ngram_kwargs = _ngram_kwargs(remove_prepositions_conjunctions, max_ngram=max_ngram)
 
     rows: list[dict[str, Any]] = []
     models = get_classification_models()

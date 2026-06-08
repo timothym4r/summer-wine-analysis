@@ -5,7 +5,13 @@ from __future__ import annotations
 import argparse
 
 from modules.binning import make_rating_bins, summarize_rating_distribution
-from modules.config import DEFAULT_DATA_PATH, DEFAULT_OUTPUT_DIR, TARGET_COL, TEXT_COL
+from modules.config import (
+    DEFAULT_DATA_PATH,
+    DEFAULT_MAX_NGRAM,
+    DEFAULT_OUTPUT_DIR,
+    TARGET_COL,
+    TEXT_COL,
+)
 from modules.data import load_wine_data
 from modules.evaluation import save_results_json
 from modules.experiments import run_classification_experiments, run_regression_experiments
@@ -18,6 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", default=DEFAULT_DATA_PATH, help="Input Wine Enthusiast CSV path.")
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directory for results.")
+    parser.add_argument(
+        "--max-ngram",
+        type=int,
+        default=DEFAULT_MAX_NGRAM,
+        help="Maximum n-gram size for TF-IDF, count, and indicator text features.",
+    )
     parser.add_argument("--run-embeddings", action="store_true", help="Run sentence embedding experiments.")
     parser.add_argument("--run-finetuning", action="store_true", help="Run transformer fine-tuning.")
     parser.add_argument("--run-llm-features", action="store_true", help="Run LLM attribute extraction.")
@@ -72,6 +84,7 @@ def main() -> None:
             run_few_shot_llm=args.run_few_shot_llm,
             standardize_target=args.standardize_target,
             remove_prepositions_conjunctions=args.remove_prepositions_conjunctions,
+            max_ngram=args.max_ngram,
         )
     save_csv(regression_results, output_dir / "regression_results.csv")
 
@@ -89,6 +102,7 @@ def main() -> None:
             run_llm_features=args.run_llm_features,
             run_few_shot_llm=args.run_few_shot_llm,
             remove_prepositions_conjunctions=args.remove_prepositions_conjunctions,
+            max_ngram=args.max_ngram,
         )
     save_csv(classification_results, output_dir / "classification_results.csv")
 
