@@ -12,7 +12,15 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
-from .config import COUNT_VECTORIZER_CONFIG, TEXT_COL, TFIDF_CONFIG
+from .config import (
+    COUNT_VECTORIZER_CONFIG,
+    PREPOSITION_CONJUNCTION_STOP_WORDS,
+    TEXT_COL,
+    TFIDF_CONFIG,
+)
+
+
+NGRAM_STOP_WORDS = sorted(PREPOSITION_CONJUNCTION_STOP_WORDS)
 
 
 def _sentence_count(text: str) -> int:
@@ -81,6 +89,16 @@ def build_count_vectorizer(**kwargs: Any) -> CountVectorizer:
     return CountVectorizer(**config)
 
 
+def build_indicator_vectorizer(**kwargs: Any) -> CountVectorizer:
+    """Create a binary n-gram indicator vectorizer with project defaults."""
+    config = {
+        **COUNT_VECTORIZER_CONFIG,
+        "binary": True,
+        **kwargs,
+    }
+    return CountVectorizer(**config)
+
+
 def build_count_pipeline(
     model: Any,
     task: str = "classification",
@@ -92,6 +110,22 @@ def build_count_pipeline(
         [
             ("text", FunctionTransformer(_extract_text_column, kw_args={"text_col": text_col})),
             ("count", build_count_vectorizer(**count_kwargs)),
+            ("model", model),
+        ]
+    )
+
+
+def build_indicator_pipeline(
+    model: Any,
+    task: str = "classification",
+    text_col: str = TEXT_COL,
+    **indicator_kwargs: Any,
+) -> Pipeline:
+    """Build a text extraction + binary n-gram indicator + model pipeline."""
+    return Pipeline(
+        [
+            ("text", FunctionTransformer(_extract_text_column, kw_args={"text_col": text_col})),
+            ("indicator", build_indicator_vectorizer(**indicator_kwargs)),
             ("model", model),
         ]
     )

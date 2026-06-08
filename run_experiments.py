@@ -23,6 +23,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-llm-features", action="store_true", help="Run LLM attribute extraction.")
     parser.add_argument("--run-few-shot-llm", action="store_true", help="Run few-shot LLM predictors.")
     parser.add_argument(
+        "--standardize-target",
+        action="store_true",
+        help=(
+            "Fit regression models on z-scored points and inverse-transform "
+            "predictions before evaluation."
+        ),
+    )
+    parser.add_argument(
+        "--remove-prepositions-conjunctions",
+        action="store_true",
+        help=(
+            "Remove curated preposition/conjunction stop words from all n-gram "
+            "feature methods, while preserving negators such as 'not'."
+        ),
+    )
+    parser.add_argument(
         "--skip-interpretability",
         action="store_true",
         help="Skip coefficient-based feature importance reports.",
@@ -54,6 +70,8 @@ def main() -> None:
             run_finetuning=args.run_finetuning,
             run_llm_features=args.run_llm_features,
             run_few_shot_llm=args.run_few_shot_llm,
+            standardize_target=args.standardize_target,
+            remove_prepositions_conjunctions=args.remove_prepositions_conjunctions,
         )
     save_csv(regression_results, output_dir / "regression_results.csv")
 
@@ -70,6 +88,7 @@ def main() -> None:
             run_finetuning=args.run_finetuning,
             run_llm_features=args.run_llm_features,
             run_few_shot_llm=args.run_few_shot_llm,
+            remove_prepositions_conjunctions=args.remove_prepositions_conjunctions,
         )
     save_csv(classification_results, output_dir / "classification_results.csv")
 

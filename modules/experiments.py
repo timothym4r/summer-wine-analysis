@@ -10,7 +10,13 @@ from .binning import make_rating_bins
 from .config import CLASS_COL, RANDOM_SEED, TARGET_COL, TEXT_COL
 from .data import train_valid_test_split
 from .evaluation import evaluate_classification, evaluate_regression
-from .features import build_count_pipeline, build_text_stats_pipeline, build_tfidf_pipeline
+from .features import (
+    NGRAM_STOP_WORDS,
+    build_count_pipeline,
+    build_indicator_pipeline,
+    build_text_stats_pipeline,
+    build_tfidf_pipeline,
+)
 from .models import get_classification_models, get_regression_models
 from .utils import progress_iter
 
@@ -18,8 +24,8 @@ TFIDF_CLASSIFICATION_MODELS = {"dummy_most_frequent", "logistic_regression", "li
 TFIDF_REGRESSION_MODELS = {"dummy_mean", "ridge", "linear_svr"}
 COUNT_CLASSIFICATION_MODELS = {"logistic_regression", "linear_svc"}
 COUNT_REGRESSION_MODELS = {"ridge", "linear_svr"}
-INDICATOR_UNIGRAM_CLASSIFICATION_MODELS = {"decision_tree"}
-INDICATOR_UNIGRAM_REGRESSION_MODELS = {"decision_tree"}
+INDICATOR_CLASSIFICATION_MODELS = {"logistic_regression", "linear_svc", "decision_tree"}
+INDICATOR_REGRESSION_MODELS = {"ridge", "linear_svr", "decision_tree"}
 
 
 def _flatten_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
@@ -30,6 +36,35 @@ def _flatten_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _target_transformer(
+    y_train: pd.Series,
+    standardize: bool,
+) -> tuple[pd.Series, Any, dict[str, Any]]:
+    if not standardize:
+        return y_train, lambda values: values, {
+            "target_transform": "raw",
+            "target_mean": None,
+            "target_std": None,
+        }
+
+    mean = float(y_train.mean())
+    std = float(y_train.std(ddof=0))
+    if std == 0.0:
+        raise ValueError("Cannot standardize a constant regression target.")
+    transformed = (y_train - mean) / std
+    return transformed, lambda values: (values * std) + mean, {
+        "target_transform": "standardized",
+        "target_mean": mean,
+        "target_std": std,
+    }
+
+
+def _ngram_kwargs(remove_prepositions_conjunctions: bool) -> dict[str, Any]:
+    if not remove_prepositions_conjunctions:
+        return {}
+    return {"stop_words": NGRAM_STOP_WORDS}
+
+
 def run_regression_experiments(
     df: pd.DataFrame,
     text_col: str = TEXT_COL,
@@ -38,6 +73,8 @@ def run_regression_experiments(
     run_finetuning: bool = False,
     run_llm_features: bool = False,
     run_few_shot_llm: bool = False,
+    standardize_target: bool = False,
+    remove_prepositions_conjunctions: bool = False,
 ) -> pd.DataFrame:
     """Run classical regression baselines and optional extension points."""
     train, valid, test = train_valid_test_split(
@@ -47,6 +84,11 @@ def run_regression_experiments(
         random_state=RANDOM_SEED,
     )
     train_eval = pd.concat([train, valid], ignore_index=True)
+    y_train, inverse_target, target_metadata = _target_transformer(
+        train_eval[target_col],
+        standardize_target,
+    )
+    ngram_kwargs = _ngram_kwargs(remove_prepositions_conjunctions)
 
     rows: list[dict[str, Any]] = []
     models = get_regression_models()
@@ -57,17 +99,23 @@ def run_regression_experiments(
         pipeline = (
             model
             if feature_family == "dummy"
-            else build_tfidf_pipeline(model, task="regression", text_col=text_col)
+            else build_tfidf_pipeline(
+                model,
+                task="regression",
+                text_col=text_col,
+                **ngram_kwargs,
+            )
         )
         x_train = train_eval if feature_family != "dummy" else train_eval[[target_col]]
         x_test = test if feature_family != "dummy" else test[[target_col]]
-        pipeline.fit(x_train, train_eval[target_col])
-        pred = pipeline.predict(x_test)
+        pipeline.fit(x_train, y_train)
+        pred = inverse_target(pipeline.predict(x_test))
         rows.append(
             {
                 "task": "regression",
                 "feature_family": feature_family,
                 "model": model_name,
+                **target_metadata,
                 **evaluate_regression(test[target_col], pred),
             }
         )
@@ -75,38 +123,44 @@ def run_regression_experiments(
     for model_name, model in progress_iter(models.items(), desc="Regression counts"):
         if model_name not in COUNT_REGRESSION_MODELS:
             continue
-        pipeline = build_count_pipeline(model, task="regression", text_col=text_col)
-        pipeline.fit(train_eval, train_eval[target_col])
-        pred = pipeline.predict(test)
+        pipeline = build_count_pipeline(
+            model,
+            task="regression",
+            text_col=text_col,
+            **ngram_kwargs,
+        )
+        pipeline.fit(train_eval, y_train)
+        pred = inverse_target(pipeline.predict(test))
         rows.append(
             {
                 "task": "regression",
                 "feature_family": "count",
                 "model": model_name,
+                **target_metadata,
                 **evaluate_regression(test[target_col], pred),
             }
         )
 
     for model_name, model in progress_iter(
         models.items(),
-        desc="Regression unigram indicator trees",
+        desc="Regression indicators",
     ):
-        if model_name not in INDICATOR_UNIGRAM_REGRESSION_MODELS:
+        if model_name not in INDICATOR_REGRESSION_MODELS:
             continue
-        pipeline = build_count_pipeline(
+        pipeline = build_indicator_pipeline(
             model,
             task="regression",
             text_col=text_col,
-            ngram_range=(1, 1),
-            binary=True,
+            **ngram_kwargs,
         )
-        pipeline.fit(train_eval, train_eval[target_col])
-        pred = pipeline.predict(test)
+        pipeline.fit(train_eval, y_train)
+        pred = inverse_target(pipeline.predict(test))
         rows.append(
             {
                 "task": "regression",
-                "feature_family": "indicator_unigram",
+                "feature_family": "indicator",
                 "model": model_name,
+                **target_metadata,
                 **evaluate_regression(test[target_col], pred),
             }
         )
@@ -118,13 +172,14 @@ def run_regression_experiments(
         if model_name.startswith("dummy"):
             continue
         pipeline = build_text_stats_pipeline(model, task="regression", text_col=text_col)
-        pipeline.fit(train_eval, train_eval[target_col])
-        pred = pipeline.predict(test)
+        pipeline.fit(train_eval, y_train)
+        pred = inverse_target(pipeline.predict(test))
         rows.append(
             {
                 "task": "regression",
                 "feature_family": "text_stats",
                 "model": model_name,
+                **target_metadata,
                 **evaluate_regression(test[target_col], pred),
             }
         )
@@ -135,6 +190,7 @@ def run_regression_experiments(
                 "task": "regression",
                 "feature_family": "optional",
                 "model": "optional_methods_not_run_in_baseline",
+                **target_metadata,
                 "mae": None,
                 "rmse": None,
                 "r2": None,
@@ -153,6 +209,7 @@ def run_classification_experiments(
     run_finetuning: bool = False,
     run_llm_features: bool = False,
     run_few_shot_llm: bool = False,
+    remove_prepositions_conjunctions: bool = False,
 ) -> pd.DataFrame:
     """Run classical classification baselines and optional extension points."""
     if CLASS_COL not in df.columns:
@@ -166,6 +223,7 @@ def run_classification_experiments(
     )
     train_eval = pd.concat([train, valid], ignore_index=True)
     labels = list(df[CLASS_COL].cat.categories) if hasattr(df[CLASS_COL], "cat") else None
+    ngram_kwargs = _ngram_kwargs(remove_prepositions_conjunctions)
 
     rows: list[dict[str, Any]] = []
     models = get_classification_models()
@@ -176,7 +234,12 @@ def run_classification_experiments(
         pipeline = (
             model
             if feature_family == "dummy"
-            else build_tfidf_pipeline(model, task="classification", text_col=text_col)
+            else build_tfidf_pipeline(
+                model,
+                task="classification",
+                text_col=text_col,
+                **ngram_kwargs,
+            )
         )
         x_train = train_eval if feature_family != "dummy" else train_eval[[target_col]]
         x_test = test if feature_family != "dummy" else test[[target_col]]
@@ -194,7 +257,12 @@ def run_classification_experiments(
     for model_name, model in progress_iter(models.items(), desc="Classification counts"):
         if model_name not in COUNT_CLASSIFICATION_MODELS:
             continue
-        pipeline = build_count_pipeline(model, task="classification", text_col=text_col)
+        pipeline = build_count_pipeline(
+            model,
+            task="classification",
+            text_col=text_col,
+            **ngram_kwargs,
+        )
         pipeline.fit(train_eval, train_eval[CLASS_COL])
         pred = pipeline.predict(test)
         rows.append(
@@ -208,23 +276,22 @@ def run_classification_experiments(
 
     for model_name, model in progress_iter(
         models.items(),
-        desc="Classification unigram indicator trees",
+        desc="Classification indicators",
     ):
-        if model_name not in INDICATOR_UNIGRAM_CLASSIFICATION_MODELS:
+        if model_name not in INDICATOR_CLASSIFICATION_MODELS:
             continue
-        pipeline = build_count_pipeline(
+        pipeline = build_indicator_pipeline(
             model,
             task="classification",
             text_col=text_col,
-            ngram_range=(1, 1),
-            binary=True,
+            **ngram_kwargs,
         )
         pipeline.fit(train_eval, train_eval[CLASS_COL])
         pred = pipeline.predict(test)
         rows.append(
             {
                 "task": "classification",
-                "feature_family": "indicator_unigram",
+                "feature_family": "indicator",
                 "model": model_name,
                 **_flatten_metrics(evaluate_classification(test[CLASS_COL], pred, labels=labels)),
             }

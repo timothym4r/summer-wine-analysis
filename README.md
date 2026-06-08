@@ -112,21 +112,22 @@ max_df = 0.95
 
 This produces unigram and bigram raw count features.
 
-### Indicator Unigrams
+### Indicator N-Grams
 
-Added for decision tree experiments. These are unigram-only binary indicators:
+Added as binary presence/absence versions of the count features. These use the same default n-gram range as count features:
 
 ```python
-ngram_range = (1, 1)
+ngram_range = (1, 2)
 binary = True
 ```
 
-Each feature is `1` if the word appears in the review and `0` otherwise. These results are labeled as:
+Each feature is `1` if the word or n-gram appears in the review and `0` otherwise. These results are labeled as:
 
 ```text
-feature_family = indicator_unigram
-model = decision_tree
+feature_family = indicator
 ```
+
+Preposition/conjunction removal is controlled by a run argument. When enabled, it applies consistently to all n-gram methods: TF-IDF, count, and indicator. Negation-bearing terms such as `not`, `no`, `nor`, `never`, and `without` are preserved.
 
 ### Text Stats
 
@@ -158,7 +159,7 @@ Current experiment routing in `modules/experiments.py`:
 
 - TF-IDF: `dummy_mean`, `ridge`, `linear_svr`
 - Count: `ridge`, `linear_svr`
-- Indicator unigrams: `decision_tree`
+- Indicator n-grams: `ridge`, `linear_svr`, `decision_tree`
 - Text stats: all non-dummy regression models
 
 ### Classification Models
@@ -174,7 +175,7 @@ Current experiment routing:
 
 - TF-IDF: `dummy_most_frequent`, `logistic_regression`, `linear_svc`
 - Count: `logistic_regression`, `linear_svc`
-- Indicator unigrams: `decision_tree`
+- Indicator n-grams: `logistic_regression`, `linear_svc`, `decision_tree`
 - Text stats: all non-dummy classification models
 
 The decision tree config is currently:
@@ -220,7 +221,13 @@ Useful options:
 ```bash
 python3 run_experiments.py --data path/to/data.csv --output-dir outputs
 python3 run_experiments.py --skip-interpretability
+python3 run_experiments.py --standardize-target
+python3 run_experiments.py --remove-prepositions-conjunctions
 ```
+
+`--standardize-target` applies only to regression. It trains regression models on z-scored `points`, then inverse-transforms predictions before computing MAE, RMSE, and R2 so reported metrics remain in the original points scale.
+
+`--remove-prepositions-conjunctions` applies to all n-gram feature methods: TF-IDF, count, and indicator. If it is not set, none of those n-gram methods apply this removal.
 
 Generate summaries and focused error-analysis files from classical outputs:
 
@@ -295,7 +302,7 @@ Tree models are not currently included in the interpretability report. If tree f
 
 ## Current Known Results
 
-The existing `outputs/regression_results.csv` and `outputs/classification_results.csv` were produced before the new indicator-unigram decision tree rows were added.
+The existing `outputs/regression_results.csv` and `outputs/classification_results.csv` may lag behind current code if new feature families or arguments have been added since the last full run.
 
 Best existing classical regression result:
 
@@ -316,7 +323,7 @@ weighted F1 = 0.5881
 quadratic weighted kappa = 0.7536
 ```
 
-Targeted run for the newly added unigram indicator decision trees:
+Historical targeted run for the earlier unigram indicator decision trees:
 
 ```text
 Regression: indicator_unigram + decision_tree
@@ -336,7 +343,7 @@ quadratic weighted kappa = 0.4902
 features = 18114
 ```
 
-To persist those tree metrics into the main result CSVs, rerun:
+The current code now uses the broader `indicator` family with 1-grams and 2-grams plus multiple linear/tree models. Preposition/conjunction filtering is opt-in through `--remove-prepositions-conjunctions`. To refresh the main result CSVs, rerun:
 
 ```bash
 python3 run_experiments.py
@@ -365,8 +372,9 @@ Start with these files:
 Important implementation details:
 
 - Current TF-IDF and count features use 1-grams and 2-grams.
-- The decision tree text experiment is intentionally unigram-only and binary, not count-based.
-- Negation words such as `not` should not be casually removed if stopword filtering is added later.
+- Indicator features also use 1-grams and 2-grams, but are binary presence/absence features.
+- Preposition/conjunction filtering is opt-in and applies to all n-gram feature families together.
+- Negation words such as `not` should not be casually removed if stopword filtering is changed later.
+- `--standardize-target` changes regression training targets only; evaluation is still reported on the original point scale.
 - Existing output CSVs may lag behind code changes; check timestamps or rerun before relying on them.
 - `data/` and `outputs/` are ignored by git, so missing local artifacts are expected on a fresh clone.
-
